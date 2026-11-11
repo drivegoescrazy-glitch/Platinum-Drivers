@@ -199,6 +199,16 @@ build_android() {
         log "Platinum v2: Clang O3 + ThinLTO enabled for compile and link"
     fi
 
+    if [ "${PLATINUM_V3_LINK_OPT:-0}" = "1" ]; then
+        # Emit separate code/data sections so LLD can discard unreachable
+        # sections and safely fold identical code. Raise ThinLTO's backend
+        # optimization level from LLD's default O2 to O3.
+        export CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
+        export CXXFLAGS="$CXXFLAGS -ffunction-sections -fdata-sections"
+        export LDFLAGS="$LDFLAGS -Wl,--lto-O3 -Wl,--gc-sections -Wl,--icf=safe"
+        log "Platinum v3: ThinLTO O3 + section GC + safe identical-code folding enabled"
+    fi
+
     cat > android-aarch64.txt <<EOF
 [binaries]
 ar = '$NDK/llvm-ar'
@@ -245,11 +255,19 @@ EOF
 
     ninja -C "$build_dir" install
 
+    local ninja_commands
+    ninja_commands="$(ninja -C "$build_dir" -t commands)"
     if [ "${PLATINUM_THINLTO:-0}" = "1" ]; then
-        if ! ninja -C "$build_dir" -t commands | grep -F -- "-flto=thin" >/dev/null; then
+        grep -F -- "-flto=thin" <<< "$ninja_commands" >/dev/null ||
             die "ThinLTO was requested but is absent from Ninja's generated commands"
-        fi
         log "Verified: generated Ninja commands contain -flto=thin"
+    fi
+    if [ "${PLATINUM_V3_LINK_OPT:-0}" = "1" ]; then
+        for required_flag in "-ffunction-sections" "-fdata-sections" "-Wl,--lto-O3" "-Wl,--gc-sections" "-Wl,--icf=safe"; do
+            grep -F -- "$required_flag" <<< "$ninja_commands" >/dev/null ||
+                die "Platinum v3 requested $required_flag but it is absent from Ninja's generated commands"
+        done
+        log "Verified: ThinLTO O3, function/data sections, section GC and safe ICF are in generated commands"
     fi
 
     [ -f "$output_dir/lib/libvulkan_freedreno.so" ] || die "libvulkan_freedreno.so was not generated"
@@ -262,13 +280,13 @@ package_variant() {
     local pretty_name desc suffix
     case "$VARIANT" in
         a7xx|platinum-a7xx)
-            pretty_name="Platinum v2 A7xx"
-            desc="Platinum v2 A7xx Android/Bionic — v39 base, D32S8 workaround revert, has_early_preamble=False, Clang O3 + ThinLTO"
+            pretty_name="Platinum v3 A7xx"
+            desc="Platinum v3 A7xx Android/Bionic — v39 base, Clang O3 + ThinLTO O3, section GC and safe ICF"
             suffix="Platinum-A7xx"
             ;;
         a7xx-oneui|platinum-a7xx-oneui)
-            pretty_name="Platinum v2 A7xx OneUI"
-            desc="Platinum v2 A7xx Android/Bionic — v39 base, OneUI 8g2 UI glitch fix, Clang O3 + ThinLTO"
+            pretty_name="Platinum v3 A7xx OneUI"
+            desc="Platinum v3 A7xx Android/Bionic — v39 base, OneUI 8g2 UI glitch fix, ThinLTO O3 and safe ICF"
             suffix="Platinum-A7xx-OneUI"
             ;;
         a8xx-patchs2)
