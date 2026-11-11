@@ -11,12 +11,12 @@ These builds target Adreno 7xx devices. The A8xx packages are intentionally not 
 
 ## What changed for Platinum v1
 
-- LLVM ThinLTO is enabled to optimise CPU-side driver code across translation units.
+- Mesa's supported release optimisation level 3 is selected explicitly; LTO remains disabled because Mesa rejects LTO builds as unsupported.
 - Mesa release optimisation level 3 and NDEBUG are selected explicitly.
 - Existing v39 GPU, shader, GMEM and UBWC behaviour is retained rather than changing unverified hardware cache values.
 - No forced sysmem mode, GPU clock changes, thermal-throttle overrides or speculative shader patches are included.
 
-ThinLTO may reduce CPU-side driver overhead, but performance and temperature changes depend on the device, game and workload. No FPS or temperature improvement is claimed until measured on hardware.
+These build settings do not guarantee higher FPS or lower temperatures. Performance and temperature changes depend on the device, game and workload, and must be measured on hardware.
 
 ## Testing
 
