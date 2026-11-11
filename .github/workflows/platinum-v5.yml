@@ -64,7 +64,7 @@ jobs:
           unzip -Z1 "$ZIP" | grep -Fxq 'meta.json'
           test "$(git -C turnip_workdir/mesa rev-parse HEAD)" = "$MESA_COMMIT"
           grep -Fq 'gmem_bandwidth = (gmem_bandwidth * 10 + total_draw_call_bandwidth) / 10;' turnip_workdir/mesa/src/freedreno/vulkan/tu_autotune.cc
-          grep -Fq 'kgsl_poll_timestamp(fd, context_id, timestamp)' turnip_workdir/mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
+          grep -Fq 'return kgsl_poll_timestamp(device, context_id, timestamp);' turnip_workdir/mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
           grep -Fq 'kgsl_syncobj_merge(struct tu_device *device' turnip_workdir/mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
           if ninja -C turnip_workdir/mesa/build-android-aarch64 -t commands | grep -F -- '-flto' >/dev/null; then
             echo "Unexpected LTO flag in V5 build" >&2
