@@ -189,6 +189,16 @@ build_android() {
     export CFLAGS="-D__ANDROID__ -Wno-error -Wno-error=gnu-empty-initializer -Wno-gnu-empty-initializer -Wno-deprecated-declarations -Wno-incompatible-pointer-types-discards-qualifiers -Wno-incompatible-pointer-types"
     export CXXFLAGS="-D__ANDROID__ -Wno-error -Wno-error=gnu-empty-initializer -Wno-gnu-empty-initializer -Wno-deprecated-declarations -Wno-incompatible-pointer-types-discards-qualifiers -Wno-incompatible-pointer-types"
 
+    if [ "${PLATINUM_THINLTO:-0}" = "1" ]; then
+        # ThinLTO is passed directly to Clang and the linker. Mesa's Meson
+        # b_lto option stays false because Mesa rejects that option in this build.
+        # This mirrors the separate A6xx/A7xx performance-build recipe.
+        export CFLAGS="$CFLAGS -O3 -fno-plt -flto=thin"
+        export CXXFLAGS="$CXXFLAGS -O3 -fno-plt -flto=thin"
+        export LDFLAGS="$LDFLAGS -flto=thin"
+        log "Platinum v2: Clang O3 + ThinLTO enabled for compile and link"
+    fi
+
     cat > android-aarch64.txt <<EOF
 [binaries]
 ar = '$NDK/llvm-ar'
@@ -235,6 +245,13 @@ EOF
 
     ninja -C "$build_dir" install
 
+    if [ "${PLATINUM_THINLTO:-0}" = "1" ]; then
+        if ! ninja -C "$build_dir" -t commands | grep -F -- "-flto=thin" >/dev/null; then
+            die "ThinLTO was requested but is absent from Ninja's generated commands"
+        fi
+        log "Verified: generated Ninja commands contain -flto=thin"
+    fi
+
     [ -f "$output_dir/lib/libvulkan_freedreno.so" ] || die "libvulkan_freedreno.so was not generated"
 }
 
@@ -245,13 +262,13 @@ package_variant() {
     local pretty_name desc suffix
     case "$VARIANT" in
         a7xx|platinum-a7xx)
-            pretty_name="Platinum v1 A7xx"
-            desc="Platinum v1 A7xx Android/Bionic — v39 base, D32S8 workaround revert, has_early_preamble=False, LTO-disabled release optimisation"
+            pretty_name="Platinum v2 A7xx"
+            desc="Platinum v2 A7xx Android/Bionic — v39 base, D32S8 workaround revert, has_early_preamble=False, Clang O3 + ThinLTO"
             suffix="Platinum-A7xx"
             ;;
         a7xx-oneui|platinum-a7xx-oneui)
-            pretty_name="Platinum v1 A7xx OneUI"
-            desc="Platinum v1 A7xx Android/Bionic — v39 base, OneUI 8g2 UI glitch fix, LTO-disabled release optimisation"
+            pretty_name="Platinum v2 A7xx OneUI"
+            desc="Platinum v2 A7xx Android/Bionic — v39 base, OneUI 8g2 UI glitch fix, Clang O3 + ThinLTO"
             suffix="Platinum-A7xx-OneUI"
             ;;
         a8xx-patchs2)
