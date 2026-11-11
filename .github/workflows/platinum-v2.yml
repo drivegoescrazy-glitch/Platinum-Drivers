@@ -1,0 +1,125 @@
+name: Build and release Platinum v2
+
+on:
+  push:
+    branches:
+      - platinum-v2
+    paths:
+      - 'build_turnip.sh'
+      - '.github/workflows/platinum-v2.yml'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - '8g2_ui_glitch.patch'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: a7xx
+            artifact: Platinum-v2-A7xx
+          - variant: a7xx-oneui
+            artifact: Platinum-v2-A7xx-OneUI
+    steps:
+      - name: Checkout Platinum v2 source
+        uses: actions/checkout@v4
+        with:
+          ref: platinum-v2
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build patchelf unzip flex bison git perl python3-pip glslang-tools curl zip patch clang lld llvm
+          pip3 install --break-system-packages meson mako
+
+      - name: Build ${ matrix.artifact }
+        env:
+          VARIANT: ${ matrix.variant }
+          BUILD_VERSION: 2.0
+          PLATINUM_OPTIMIZED: 1
+          PLATINUM_THINLTO: 1
+          # Same Mesa source as v1.0: isolates the compiler-profile change for A/B testing.
+          MESA_COMMIT: e4415d24616afbeee528a050b6d70f036057408c
+        run: |
+          chmod +x build_turnip.sh
+          ./build_turnip.sh
+
+      - name: Verify driver package
+        run: |
+          ZIP="$(find turnip_workdir -maxdepth 1 -type f -name 'Turnip_Platinum-*.zip' -print -quit)"
+          test -n "$ZIP"
+          unzip -t "$ZIP"
+          unzip -p "$ZIP" meta.json | python3 -m json.tool
+          unzip -Z1 "$ZIP" | grep -Fxq 'libvulkan_freedreno.so'
+          unzip -Z1 "$ZIP" | grep -Fxq 'meta.json'
+          echo "Verified $ZIP"
+
+      - name: Upload driver artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${ matrix.artifact }
+          path: turnip_workdir/Turnip_Platinum-*.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  release:
+    needs: build
+    if: ${ success() }
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download both build packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Platinum-v2-*
+          path: release
+          merge-multiple: true
+
+      - name: Check release contents
+        run: |
+          ls -lah release
+          test "$(find release -maxdepth 1 -type f -name '*.zip' | wc -l)" -eq 2
+          for f in release/*.zip; do
+            unzip -t "$f"
+            unzip -p "$f" meta.json | python3 -m json.tool
+          done
+
+      - name: Publish Platinum v2 release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: platinum-v2.0
+          name: Platinum Drivers v2.0
+          body: |
+            ## Platinum v2.0 — ThinLTO performance build
+
+            **A/B baseline:** same Mesa source commit as Platinum v1.0:
+            `e4415d24616afbeee528a050b6d70f036057408c`.
+
+            ### Packages
+            - **Platinum-A7xx** — standard A7xx Android/Bionic build.
+            - **Platinum-A7xx-OneUI** — separate A7xx build for devices whose system driver enables the Adreno 740 TP UBWC hint.
+
+            ### Changelog
+            - Retains the v1.0 v39-derived A7xx configuration and D32S8 workaround revert.
+            - Adds Clang `-O3 -fno-plt -flto=thin` to C and C++ compilation, and `-flto=thin` at link time.
+            - Keeps Mesa Meson LTO switch disabled; ThinLTO is supplied through compiler/linker flags and verified in Ninja's generated commands.
+            - Uses the same Mesa commit as v1.0 so the A/B comparison isolates the compiler-profile change.
+            - Does not force GPU clocks, voltage, fan settings, GMEM/sysmem policy or additional UBWC flags.
+
+            ### Testing status
+            - CI builds both variants, verifies ThinLTO is present in generated commands, and validates each ZIP and its metadata.
+            - A 5–10% FPS gain with no extra heat is the design target, not a measured result or guarantee.
+            - Physical-device FPS, frame-time, visual regression and sustained-temperature tests are still required before claiming that target has been reached.
+          files: release/*.zip
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${ secrets.GITHUB_TOKEN }
