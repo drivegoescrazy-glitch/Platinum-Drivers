@@ -45,14 +45,16 @@ jobs:
           VARIANT: ${{ matrix.variant }}
           BUILD_VERSION: 5.0
           PLATINUM_OPTIMIZED: 1
-          PLATINUM_V5_NO_PLT: 1
+          PLATINUM_V5_BALANCED: 1
           # Pin current upstream Mesa main used by Banners-Turnip v27.0.0-20261111-r3.
           MESA_COMMIT: 20a455bed795148c07a3adc3eed1e84c5ed4a785
         run: |
           chmod +x build_turnip.sh
           ./build_turnip.sh
 
-      - name: Verify v4 compile flags and package
+      - name: Verify v5 source, tuning and package
+        env:
+          MESA_COMMIT: 20a455bed795148c07a3adc3eed1e84c5ed4a785
         run: |
           ZIP="$(find turnip_workdir -maxdepth 1 -type f -name 'Turnip_Platinum-*.zip' -print -quit)"
           test -n "$ZIP"
