@@ -1,4 +1,4 @@
-name: Publish Platinum Drivers v39
+name: Build and attach Platinum Drivers v39
 
 on:
   push:
@@ -9,19 +9,90 @@ permissions:
   contents: write
 
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      mesa_commit: ${{ steps.mesa.outputs.commit }}
+    steps:
+      - name: Resolve Mesa main
+        id: mesa
+        run: |
+          COMMIT=$(git ls-remote https://gitlab.freedesktop.org/mesa/mesa.git refs/heads/main | awk '{print $1}')
+          test -n "$COMMIT"
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: a7xx
+            artifact: Turnip-A7xx
+          - variant: a7xx-oneui
+            artifact: Turnip-A7xx-OneUI-Glitch
+          - variant: a8xx-patchs2
+            artifact: Turnip-A8xx-Patchs2
+          - variant: a8xx-patchs1
+            artifact: Turnip-A8xx-Patched-Patchs1
+
+    steps:
+      - name: Checkout v39 source
+        uses: actions/checkout@v4
+        with:
+          ref: v39
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build patchelf unzip flex bison git perl python3-pip glslang-tools curl zip patch clang lld llvm
+          pip3 install --break-system-packages meson mako
+
+      - name: Build ${{ matrix.artifact }}
+        env:
+          VARIANT: ${{ matrix.variant }}
+          BUILD_VERSION: 39
+          MESA_COMMIT: ${{ needs.resolve.outputs.mesa_commit }}
+        run: |
+          chmod +x build_turnip.sh
+          ./build_turnip.sh
+
+      - name: Verify driver ZIP
+        run: |
+          ZIP="$(find turnip_workdir -maxdepth 1 -type f -name 'Turnip_*.zip' -print -quit)"
+          test -n "$ZIP"
+          unzip -t "$ZIP"
+          unzip -p "$ZIP" meta.json | python3 -m json.tool
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: turnip_workdir/Turnip_*.zip
+          if-no-files-found: error
+          compression-level: 0
+
   publish:
+    needs: [resolve, build]
     runs-on: ubuntu-latest
     steps:
-      - name: Publish v39 as a GitHub Release
+      - name: Download all four drivers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Turnip-*
+          path: release
+          merge-multiple: true
+
+      - name: Verify four driver packages
+        run: |
+          ls -lah release
+          test "$(find release -maxdepth 1 -type f -name '*.zip' | wc -l)" -eq 4
+          for f in release/*.zip; do unzip -t "$f"; done
+
+      - name: Attach drivers to the existing v39 release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view v39 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "A release for v39 already exists; leaving it unchanged."
-            exit 0
-          fi
-
-          gh release create v39 \
-            --title "Platinum Drivers v39" \
-            --notes "Platinum Drivers v39. This release points to the existing v39 tag." \
-            --repo "$GITHUB_REPOSITORY"
+          gh release upload v39 release/*.zip --clobber --repo "$GITHUB_REPOSITORY"
