@@ -176,14 +176,6 @@ build_android() {
     export CFLAGS="-D__ANDROID__ -Wno-error -Wno-error=gnu-empty-initializer -Wno-gnu-empty-initializer -Wno-deprecated-declarations -Wno-incompatible-pointer-types-discards-qualifiers -Wno-incompatible-pointer-types"
     export CXXFLAGS="-D__ANDROID__ -Wno-error -Wno-error=gnu-empty-initializer -Wno-gnu-empty-initializer -Wno-deprecated-declarations -Wno-incompatible-pointer-types-discards-qualifiers -Wno-incompatible-pointer-types"
 
-    if [ "${PLATINUM_V4_NO_PLT:-0}" = "1" ]; then
-        # Isolate the no-PLT code-generation experiment from ThinLTO.
-        # The previous v2/v3 ThinLTO profile is deliberately not used.
-        export CFLAGS="$CFLAGS -fno-plt"
-        export CXXFLAGS="$CXXFLAGS -fno-plt"
-        log "Platinum v4: v1 release profile + -fno-plt only (no ThinLTO)"
-    fi
-
     cat > android-aarch64.txt <<EOF
 [binaries]
 ar = '$NDK/llvm-ar'
