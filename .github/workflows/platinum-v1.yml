@@ -116,7 +116,7 @@ jobs:
 
             ### Changelog
             - Retains the v39 A7xx device configuration and D32S8 workaround revert.
-            - Enables LLVM ThinLTO for cross-translation-unit optimisation of CPU-side driver code.
+            - Uses Mesa release optimisation level 3 and NDEBUG; LTO is deliberately disabled because Mesa explicitly rejects LTO as unsupported.
             - Explicitly selects Mesa release optimisation level 3 and NDEBUG.
             - Keeps upstream GMEM, UBWC, shader and memory behaviour unchanged; no speculative cache sizing, forced sysmem, clock or thermal overrides.
             - Uses one pinned Mesa commit for both packages in this release.
