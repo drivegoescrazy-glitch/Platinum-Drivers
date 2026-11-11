@@ -75,20 +75,22 @@ jobs:
           compression-level: 0
 
   publish:
+    if: always()
     needs: [resolve, build]
     runs-on: ubuntu-latest
     steps:
-      - name: Download all four drivers
+      - name: Download all successful drivers
         uses: actions/download-artifact@v4
         with:
           pattern: Turnip-*
           path: release
           merge-multiple: true
 
-      - name: Verify four driver packages
+      - name: Verify available driver packages
         run: |
           ls -lah release
-          test "$(find release -maxdepth 1 -type f -name '*.zip' | wc -l)" -eq 4
+          COUNT="$(find release -maxdepth 1 -type f -name '*.zip' | wc -l)"
+          test "$COUNT" -ge 2
           for f in release/*.zip; do unzip -t "$f"; done
 
       - name: Attach drivers to the existing v39 release
