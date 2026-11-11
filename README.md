@@ -1,31 +1,39 @@
 # Platinum Drivers
 
-Platinum v1 is a conservative performance-focused A7xx Android/Bionic Turnip build based on the repository's v39 source tag.
+Platinum is a performance-focused Android/Bionic Mesa Turnip build for Qualcomm Adreno GPUs.
 
-## v1.0 packages
+## Current release: Platinum v2.0
+
+- **Platinum-A7xx** — standard A7xx build; the recommended package for most Snapdragon 8 Gen 2 / Adreno 740 devices.
+- **Platinum-A7xx-OneUI** — separate A7xx build for devices whose system graphics driver enables the Adreno 740 TP UBWC flag hint (for example, certain newer Samsung One UI firmware builds).
+
+### What changed in v2.0
+
+- Retains the v1.0 v39-derived A7xx device configuration and D32S8 workaround revert.
+- Adds Clang `-O3 -fno-plt -flto=thin` for C/C++ compilation and ThinLTO at link time.
+- Keeps Meson's `b_lto` option disabled; ThinLTO is passed directly through compiler and linker flags.
+- Uses the exact same Mesa source commit as v1.0 (`e4415d24616afbeee528a050b6d70f036057408c`) to isolate the build-profile change for fair A/B testing.
+- Does not force GPU clocks, voltage, fan settings, GMEM/sysmem policy or additional UBWC flags.
+
+**Performance target:** 5–10% higher FPS with no measurable temperature increase. This is a target only. No gain or thermal result is claimed until the same device, game, scene, resolution, frame cap and ambient conditions have been tested against v1.0.
+
+### Adreno 740 compatibility note
+
+The standard package leaves `enable_tp_ubwc_flag_hint` disabled, matching the usual Adreno 740 system-driver configuration. This flag must match the system driver; enabling it on devices whose system driver leaves it off can cause corrupted scaling. Use the OneUI package only when the device's system UI glitches with the standard driver and its system driver is known to set this hint.
+
+## Previous release: Platinum v1.0
 
 - **Platinum-A7xx** — standard A7xx build.
-- **Platinum-A7xx-OneUI** — A7xx build with the inherited OneUI 8g2 UI glitch fix.
-
-These builds target Adreno 7xx devices. The A8xx packages are intentionally not included in v1.0: the inherited A8xx patch sets did not apply cleanly to the newer Mesa revision in earlier CI attempts, and they need a separate rebase and validation pass.
-
-## What changed for Platinum v1
-
-- Mesa's supported release optimisation level 3 is selected explicitly; LTO remains disabled because Mesa rejects LTO builds as unsupported.
-- Mesa release optimisation level 3 and NDEBUG are selected explicitly.
-- Existing v39 GPU, shader, GMEM and UBWC behaviour is retained rather than changing unverified hardware cache values.
-- No forced sysmem mode, GPU clock changes, thermal-throttle overrides or speculative shader patches are included.
-
-These build settings do not guarantee higher FPS or lower temperatures. Performance and temperature changes depend on the device, game and workload, and must be measured on hardware.
+- **Platinum-A7xx-OneUI** — A7xx build with the OneUI 8g2 UI glitch fix.
+- Used Mesa release optimisation level 3 and NDEBUG without ThinLTO.
 
 ## Testing
 
-1. Validate the ZIP structure (done by CI).
-2. Import the ZIP into **DriverLab** on the Android device.
-3. Run Vulkan CTS quick checks, rendering basics and repeated runs.
-4. Compare the stock driver and Platinum v1 with the same DriverLab speed-test scenes.
-5. Check actual games for visual errors, crashes and frame-time consistency.
-6. Repeat a sustained workload while recording device temperature and performance over time.
+1. Import the ZIP into **DriverLab** on the Android device.
+2. Compare v1.0 and v2.0 using the same Vulkan speed-test scenes.
+3. Run the same real games with identical settings and record average FPS, 1% lows and frame times.
+4. Check rendering, visual glitches, crashes and Vulkan CTS quick tests.
+5. Repeat a sustained workload while recording device temperature, power draw if available, and clock behaviour. Compare after temperatures have stabilised.
 
 DriverLab: https://github.com/The412Banner/DriverLab
 
@@ -35,4 +43,4 @@ FauxVkDB is a results database, not a hosted service that can load and test a pr
 
 ## Build
 
-The `platinum-v1` GitHub Actions workflow resolves one Mesa commit and builds both A7xx packages against that same revision. It publishes a GitHub prerelease only after both ZIPs build and pass archive checks.
+The `platinum-v2` workflow builds both A7xx variants against the pinned v1.0 Mesa commit. It checks that the generated Ninja commands contain `-flto=thin`, validates the APK-driver ZIP contents and metadata, and publishes a prerelease only after both variants build successfully.
