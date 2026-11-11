@@ -189,6 +189,14 @@ build_android() {
     export CFLAGS="-D__ANDROID__ -Wno-error -Wno-error=gnu-empty-initializer -Wno-gnu-empty-initializer -Wno-deprecated-declarations -Wno-incompatible-pointer-types-discards-qualifiers -Wno-incompatible-pointer-types"
     export CXXFLAGS="-D__ANDROID__ -Wno-error -Wno-error=gnu-empty-initializer -Wno-gnu-empty-initializer -Wno-deprecated-declarations -Wno-incompatible-pointer-types-discards-qualifiers -Wno-incompatible-pointer-types"
 
+    if [ "${PLATINUM_V4_NO_PLT:-0}" = "1" ]; then
+        # Isolate the no-PLT code-generation experiment from ThinLTO.
+        # The previous v2/v3 ThinLTO profile is deliberately not used.
+        export CFLAGS="$CFLAGS -fno-plt"
+        export CXXFLAGS="$CXXFLAGS -fno-plt"
+        log "Platinum v4: v1 release profile + -fno-plt only (no ThinLTO)"
+    fi
+
     cat > android-aarch64.txt <<EOF
 [binaries]
 ar = '$NDK/llvm-ar'
@@ -226,14 +234,24 @@ EOF
 
     local platinum_build_args=()
     if [ "${PLATINUM_OPTIMIZED:-0}" = "1" ]; then
-        # Mesa explicitly rejects LTO in supported builds. Use its release
-        # optimisation settings without enabling LTO.
+        # Keep the v1 Mesa release profile. Do not enable ThinLTO here:
+        # the v2/v3 profile did not outperform v1 in the user's workload.
         platinum_build_args+=( -Db_lto=false -Doptimization=3 -Db_ndebug=true )
     fi
 
     meson setup "$build_dir"         --cross-file android-aarch64.txt         --native-file native.txt         --prefix "$output_dir"         -Dbuildtype=release "${platinum_build_args[@]}"         -Dstrip=true         -Dplatforms=android         -Dvideo-codecs=         -Dplatform-sdk-version=36         -Dandroid-stub=true         -Dgallium-drivers=         -Dvulkan-drivers=freedreno         -Dvulkan-beta=true         -Dfreedreno-kmds=kgsl         -Degl=disabled         -Dandroid-libbacktrace=disabled
 
     ninja -C "$build_dir" install
+
+    if [ "${PLATINUM_V4_NO_PLT:-0}" = "1" ]; then
+        if ! ninja -C "$build_dir" -t commands | grep -F -- "-fno-plt" >/dev/null; then
+            die "Platinum v4 requested -fno-plt but it is absent from Ninja's generated commands"
+        fi
+        if ninja -C "$build_dir" -t commands | grep -F -- "-flto" >/dev/null; then
+            die "Unexpected LTO flag found: v4 must retain the v1 no-LTO profile"
+        fi
+        log "Verified: v4 uses -fno-plt without ThinLTO"
+    fi
 
     [ -f "$output_dir/lib/libvulkan_freedreno.so" ] || die "libvulkan_freedreno.so was not generated"
 }
@@ -245,13 +263,13 @@ package_variant() {
     local pretty_name desc suffix
     case "$VARIANT" in
         a7xx|platinum-a7xx)
-            pretty_name="Platinum v1 A7xx"
-            desc="Platinum v1 A7xx Android/Bionic — v39 base, D32S8 workaround revert, has_early_preamble=False, LTO-disabled release optimisation"
+            pretty_name="Platinum v4 A7xx"
+            desc="Platinum v4 A7xx Android/Bionic — v1 release profile with isolated -fno-plt code-generation experiment; no ThinLTO"
             suffix="Platinum-A7xx"
             ;;
         a7xx-oneui|platinum-a7xx-oneui)
-            pretty_name="Platinum v1 A7xx OneUI"
-            desc="Platinum v1 A7xx Android/Bionic — v39 base, OneUI 8g2 UI glitch fix, LTO-disabled release optimisation"
+            pretty_name="Platinum v4 A7xx OneUI"
+            desc="Platinum v4 A7xx Android/Bionic — OneUI 8g2 UI glitch fix, v1 release profile plus -fno-plt; no ThinLTO"
             suffix="Platinum-A7xx-OneUI"
             ;;
         a8xx-patchs2)
