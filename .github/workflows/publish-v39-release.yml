@@ -1,0 +1,27 @@
+name: Publish Platinum Drivers v39
+
+on:
+  push:
+    branches:
+      - A8xx
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish v39 as a GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view v39 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "A release for v39 already exists; leaving it unchanged."
+            exit 0
+          fi
+
+          gh release create v39 \
+            --title "Platinum Drivers v39" \
+            --notes "Platinum Drivers v39. This release points to the existing v39 tag." \
+            --repo "$GITHUB_REPOSITORY"
