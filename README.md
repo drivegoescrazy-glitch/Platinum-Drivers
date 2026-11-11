@@ -1,51 +1,56 @@
 # Platinum Drivers
 
-Platinum is a performance-focused Android/Bionic Mesa Turnip build for Qualcomm Adreno GPUs.
+Platinum is an Android/Bionic Mesa Turnip Vulkan driver build for Qualcomm Adreno GPUs.
 
-## Platinum v4.0 — controlled performance candidate
+## Platinum v5.0 — A7xx balanced build
 
-- **Platinum-A7xx** — standard A7xx build for Adreno 7xx devices.
-- **Platinum-A7xx-OneUI** — separate compatibility package for Adreno 740 devices whose system driver enables the TP UBWC hint.
+V5 is aimed at the AYN Thor Base (Snapdragon 8 Gen 2, Adreno 740). It combines a current upstream Mesa base with a conservative GMEM/SYSMEM autotuner adjustment. The goal is sustainable performance: smooth frame pacing and efficient memory traffic without forcing maximum GPU clocks.
 
-### Why v4 is based on v1
+### Packages
 
-The v2/v3 ThinLTO profile performed worse than v1 in the user's reported workload. V4 therefore starts from the v1 source/build configuration rather than stacking more aggressive compiler and linker changes.
+- **Platinum-A7xx** — standard Adreno 7xx package. Start with this.
+- **Platinum-A7xx-OneUI** — same driver, with the Adreno 740 TP UBWC hint enabled. Use only on firmware whose system driver enables that hint and where the standard package causes UI flicker or scaling corruption.
 
-### What changed in v4
+## V5 changes
 
-- Keeps v1's Mesa release profile: `-Doptimization=3`, `-Db_ndebug=true`, and LTO disabled.
-- Adds only `-fno-plt` to C and C++ compilation as an isolated experiment.
-- Does not use ThinLTO, `--lto-O3`, section garbage collection, or identical-code folding.
-- CI checks that `-fno-plt` is present in generated Ninja commands and that no LTO flags are present.
-- Uses the same Mesa source commit as v1/v2/v3 (`e4415d24616afbeee528a050b6d70f036057408c`) to isolate the one build-flag change.
-- Does not change Adreno GPU register values, clocks, voltage, fan controls, GMEM/sysmem policy, or thermal limits.
+- **Current upstream Mesa:** pinned to `20a455bed795148c07a3adc3eed1e84c5ed4a785`, the Mesa revision used by Banners-Turnip v27.0.0-20261111-r3.
+- **Upstream KGSL fixes:** build-time assertions confirm the zero-timeout timestamp poll and syncobj-merge fixes are present. These prevent known KGSL synchronisation problems; the zero-timeout fix is particularly relevant to Vulkan/DX12-on-KGSL workloads.
+- **Balanced GMEM autotuner:** adopts WinNative's conservative adjustment to the estimated GMEM bandwidth multiplier (11/10 → 10/10). This affects the GMEM-versus-SYSMEM heuristic, not GPU clocks or voltage.
+- **Per-game A7xx compatibility:** adds Turnip SSBO-emulation defaults only for MIO and UNCHARTED: Legacy of Thieves Collection, where large storage-buffer ranges can exceed A7xx's default limit.
+- **Current A7xx device configuration:** removes the old v1-era D32S8 revert and gen1 preamble override rather than carrying those historical modifications onto current Mesa.
+- **OneUI compatibility:** ports the idempotent Adreno 740 UBWC-hint script and limits it to the OneUI package.
 
-**Important:** V4 is a test candidate, not a guaranteed faster driver. It is designed to avoid the v2/v3 ThinLTO change that regressed the user's workload, while testing one separate code-generation option. Whether `-fno-plt` improves FPS depends on the workload and must be measured on the target device. V1 remains the known-good fallback.
+## Power and performance policy
 
-## Previous versions
+V5 intentionally uses normal KGSL power management. It does **not** force `PWR_MAX`, disable the GPU governor, change clocks or voltage, force GMEM/SYSMEM, enable ThinLTO, or change thermal limits.
 
-- **v1.0:** Mesa release optimisation level 3 and NDEBUG; no ThinLTO.
-- **v2.0:** added Clang O3, `-fno-plt`, and ThinLTO.
-- **v3.0:** raised ThinLTO back-end optimisation and added section GC and safe ICF.
+Why not include the maximum-clock mode from some other driver builds? Those modes explicitly increase power draw and are a poor fit for a combined lower-heat / better-battery target. V5 instead keeps the GPU free to ramp as the workload requires, while making a modest adjustment to the rendering-mode estimate.
 
-## Adreno 740 compatibility note
-
-The standard package leaves `enable_tp_ubwc_flag_hint` disabled. This flag must match the system graphics driver; enabling it on devices whose system driver leaves it off can cause corrupted scaling. Use the OneUI package only if the device's system UI glitches with the standard driver and the system driver is known to set this hint.
+The autotuner change is a heuristic, not a hardware benchmark. It may improve bandwidth behaviour on some scenes and make no difference on others. It is not possible to guarantee higher FPS, lower temperatures, or longer battery runtime without testing on the actual Adreno 740 device.
 
 ## Testing
 
-1. Keep v1 available as the fallback.
-2. Import v4 into DriverLab and compare it with v1 using identical Vulkan test scenes.
-3. Run the same games, scene, resolution, frame cap and settings.
-4. Compare average FPS, 1% lows, frame times and crashes.
-5. Repeat sustained tests after temperatures stabilise, recording device temperature and power draw if available.
+Compare V5 against V1 in the same games and scenes, with the same resolution, graphics settings, frame cap, battery level, and room temperature.
 
-DriverLab: https://github.com/The412Banner/DriverLab
+Record:
+- Average FPS and 1% lows.
+- Frame-time consistency / stutter count.
+- Device temperature after the same sustained run.
+- Battery percentage or power draw over the same time window.
+- Visual glitches, crashes, and shader compilation behaviour.
 
-Public comparison reports: https://fauxvkdb.canonspike.com/
+Do not judge a driver from a brief cold start: repeat a longer run after temperatures stabilise. Keep V1 as the fallback until V5 shows a repeatable improvement.
 
-FauxVkDB is a results database, not a hosted service that can load and test a private driver ZIP. DriverLab performs the tests locally on the target Android device.
+### Useful project references
 
-## Build
+- [Mesa Turnip / Freedreno documentation](https://docs.mesa3d.org/drivers/freedreno.html)
+- [Banners-Turnip — upstream Mesa builds and A7xx KGSL fixes](https://github.com/The412Banner/Banners-Turnip)
+- [WinNative Drivers — balanced and performance variants](https://github.com/WinNative-Emu/Drivers)
+- [DriverLab — local Android driver testing](https://github.com/The412Banner/DriverLab)
+- [FauxVkDB — public Vulkan benchmark results](https://fauxvkdb.canonspike.com/)
 
-The `platinum-v4` workflow builds both A7xx variants against the pinned v1 Mesa commit. It verifies the isolated `-fno-plt` flag, checks that no LTO flag is present, validates each ZIP and metadata, and publishes a prerelease only after both builds pass.
+FauxVkDB is a results database, not a hosted service for uploading and testing a private ZIP. DriverLab performs tests locally on the target Android device.
+
+## Build and CI
+
+The `platinum-v5` workflow builds standard and OneUI packages against the same pinned Mesa SHA. It validates the Mesa revision, balanced autotuner expression, KGSL fixes, absence of LTO flags, ZIP integrity, and metadata before publishing both assets.
