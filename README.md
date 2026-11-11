@@ -44,3 +44,5 @@ FauxVkDB is a results database, not a hosted service that can load and test a pr
 ## Build
 
 The `platinum-v2` workflow builds both A7xx variants against the pinned v1.0 Mesa commit. It checks that the generated Ninja commands contain `-flto=thin`, validates the APK-driver ZIP contents and metadata, and publishes a prerelease only after both variants build successfully.
+
+<!-- Re-run v2 CI after correcting workflow expressions. -->
