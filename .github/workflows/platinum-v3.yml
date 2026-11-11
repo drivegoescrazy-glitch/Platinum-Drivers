@@ -1,0 +1,127 @@
+name: Build and release Platinum v3
+
+on:
+  push:
+    branches:
+      - platinum-v3
+    paths:
+      - 'build_turnip.sh'
+      - '.github/workflows/platinum-v3.yml'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - '8g2_ui_glitch.patch'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 115
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: a7xx
+            artifact: Platinum-v3-A7xx
+          - variant: a7xx-oneui
+            artifact: Platinum-v3-A7xx-OneUI
+    steps:
+      - name: Checkout Platinum v3 source
+        uses: actions/checkout@v4
+        with:
+          ref: platinum-v3
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build patchelf unzip flex bison git perl python3-pip glslang-tools curl zip patch clang lld llvm
+          pip3 install --break-system-packages meson mako
+
+      - name: Build $${{ matrix.artifact }}
+        env:
+          VARIANT: $${{ matrix.variant }}
+          BUILD_VERSION: 3.0
+          PLATINUM_OPTIMIZED: 1
+          PLATINUM_THINLTO: 1
+          PLATINUM_V3_LINK_OPT: 1
+          # Same Mesa source as v2.0: isolates the added link optimizations.
+          MESA_COMMIT: e4415d24616afbeee528a050b6d70f036057408c
+        run: |
+          chmod +x build_turnip.sh
+          ./build_turnip.sh
+
+      - name: Verify v3 optimization flags and driver package
+        run: |
+          ZIP="$(find turnip_workdir -maxdepth 1 -type f -name 'Turnip_Platinum-*.zip' -print -quit)"
+          test -n "$ZIP"
+          unzip -t "$ZIP"
+          unzip -p "$ZIP" meta.json | python3 -m json.tool
+          unzip -Z1 "$ZIP" | grep -Fxq 'libvulkan_freedreno.so'
+          unzip -Z1 "$ZIP" | grep -Fxq 'meta.json'
+          echo "Verified $ZIP"
+
+      - name: Upload driver artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: $${{ matrix.artifact }}
+          path: turnip_workdir/Turnip_Platinum-*.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  release:
+    needs: build
+    if: $${{ success() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download both build packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Platinum-v3-*
+          path: release
+          merge-multiple: true
+
+      - name: Check release contents
+        run: |
+          ls -lah release
+          test "$(find release -maxdepth 1 -type f -name '*.zip' | wc -l)" -eq 2
+          for f in release/*.zip; do
+            unzip -t "$f"
+            unzip -p "$f" meta.json | python3 -m json.tool
+          done
+
+      - name: Publish Platinum v3 release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: platinum-v3.0
+          name: Platinum Drivers v3.0
+          body: |
+            ## Platinum v3.0 — ThinLTO O3 and safe linker optimizations
+
+            **Controlled baseline:** same Mesa source commit as v2.0:
+            `e4415d24616afbeee528a050b6d70f036057408c`.
+
+            ### Packages
+            - **Platinum-A7xx** — standard A7xx Android/Bionic build.
+            - **Platinum-A7xx-OneUI** — A7xx compatibility package for systems whose system driver enables the Adreno 740 TP UBWC hint.
+
+            ### Changelog
+            - Retains Clang `-O3 -fno-plt -flto=thin` from v2.0.
+            - Raises LLD ThinLTO backend optimisation to `--lto-O3` (LLD's documented default is O2).
+            - Adds function/data sections and `--gc-sections` so unused sections can be discarded.
+            - Adds `--icf=safe` to fold eligible identical code sections; avoids unsafe `--icf=all`.
+            - Does not change GPU register values, clocks, voltage, fan, GMEM/sysmem policy or thermal limits.
+            - CI checks that every compiler/linker flag is in generated Ninja commands, then validates both ZIP archives and metadata.
+
+            ### Testing status
+            - Both A7xx packages must pass CI compilation and archive checks before this release is published.
+            - A 5–10% FPS increase with no additional heat remains a target, not a measured claim or guarantee.
+            - Physical-device Vulkan CTS, game FPS/frame-time, visual compatibility and sustained-temperature testing are still required.
+          files: release/*.zip
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: $${{ secrets.GITHUB_TOKEN }}
