@@ -139,10 +139,10 @@ apply_android_ndk_fixes() {
 
 configure_variant() {
     case "$VARIANT" in
-        a7xx)
+        a7xx|platinum-a7xx)
             apply_a7xx_base
             ;;
-        a7xx-oneui)
+        a7xx-oneui|platinum-a7xx-oneui)
             apply_a7xx_base
             apply_oneui_glitch
             ;;
@@ -224,7 +224,14 @@ EOF
     local output_dir="/tmp/turnip-$VARIANT"
     rm -rf "$build_dir" "$output_dir"
 
-    meson setup "$build_dir"         --cross-file android-aarch64.txt         --native-file native.txt         --prefix "$output_dir"         -Dbuildtype=release         -Dstrip=true         -Dplatforms=android         -Dvideo-codecs=         -Dplatform-sdk-version=36         -Dandroid-stub=true         -Dgallium-drivers=         -Dvulkan-drivers=freedreno         -Dvulkan-beta=true         -Dfreedreno-kmds=kgsl         -Degl=disabled         -Dandroid-libbacktrace=disabled
+    local platinum_build_args=()
+    if [ "${PLATINUM_OPTIMIZED:-0}" = "1" ]; then
+        # ThinLTO optimizes cross-translation-unit CPU-side driver code.
+        # Keep Mesa release defaults and avoid unsafe GPU/cache/clock overrides.
+        platinum_build_args+=( -Db_lto=true -Db_lto_mode=thin -Doptimization=3 -Db_ndebug=true )
+    fi
+
+    meson setup "$build_dir"         --cross-file android-aarch64.txt         --native-file native.txt         --prefix "$output_dir"         -Dbuildtype=release "${platinum_build_args[@]}"         -Dstrip=true         -Dplatforms=android         -Dvideo-codecs=         -Dplatform-sdk-version=36         -Dandroid-stub=true         -Dgallium-drivers=         -Dvulkan-drivers=freedreno         -Dvulkan-beta=true         -Dfreedreno-kmds=kgsl         -Degl=disabled         -Dandroid-libbacktrace=disabled
 
     ninja -C "$build_dir" install
 
@@ -237,15 +244,15 @@ package_variant() {
 
     local pretty_name desc suffix
     case "$VARIANT" in
-        a7xx)
-            pretty_name="Turnip A7xx"
-            desc="StevenMXZ A7xx Android/Bionic — revert D32S8 + has_early_preamble=False"
-            suffix="A7xx"
+        a7xx|platinum-a7xx)
+            pretty_name="Platinum v1 A7xx"
+            desc="Platinum v1 A7xx Android/Bionic — v39 base, D32S8 workaround revert, has_early_preamble=False, ThinLTO release build"
+            suffix="Platinum-A7xx"
             ;;
-        a7xx-oneui)
-            pretty_name="Turnip A7xx OneUI Glitch"
-            desc="StevenMXZ A7xx Android/Bionic + OneUI 8g2 UI glitch fix"
-            suffix="A7xx-OneUI-Glitch"
+        a7xx-oneui|platinum-a7xx-oneui)
+            pretty_name="Platinum v1 A7xx OneUI"
+            desc="Platinum v1 A7xx Android/Bionic — v39 base, OneUI 8g2 UI glitch fix, ThinLTO release build"
+            suffix="Platinum-A7xx-OneUI"
             ;;
         a8xx-patchs2)
             pretty_name="Turnip A8xx Patchs2"
@@ -267,7 +274,7 @@ package_variant() {
   "schemaVersion": 1,
   "name": "$pretty_name",
   "description": "$desc — Mesa $mesa_short",
-  "author": "StevenMXZ",
+  "author": "Platinum Drivers",
   "packageVersion": "$BUILD_VERSION",
   "vendor": "Mesa",
   "driverVersion": "Mesa-$mesa_short",
