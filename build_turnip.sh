@@ -226,9 +226,9 @@ EOF
 
     local platinum_build_args=()
     if [ "${PLATINUM_OPTIMIZED:-0}" = "1" ]; then
-        # ThinLTO optimizes cross-translation-unit CPU-side driver code.
-        # Keep Mesa release defaults and avoid unsafe GPU/cache/clock overrides.
-        platinum_build_args+=( -Db_lto=true -Db_lto_mode=thin -Doptimization=3 -Db_ndebug=true )
+        # Mesa explicitly rejects LTO in supported builds. Use its release
+        # optimisation settings without enabling LTO.
+        platinum_build_args+=( -Db_lto=false -Doptimization=3 -Db_ndebug=true )
     fi
 
     meson setup "$build_dir"         --cross-file android-aarch64.txt         --native-file native.txt         --prefix "$output_dir"         -Dbuildtype=release "${platinum_build_args[@]}"         -Dstrip=true         -Dplatforms=android         -Dvideo-codecs=         -Dplatform-sdk-version=36         -Dandroid-stub=true         -Dgallium-drivers=         -Dvulkan-drivers=freedreno         -Dvulkan-beta=true         -Dfreedreno-kmds=kgsl         -Degl=disabled         -Dandroid-libbacktrace=disabled
@@ -246,12 +246,12 @@ package_variant() {
     case "$VARIANT" in
         a7xx|platinum-a7xx)
             pretty_name="Platinum v1 A7xx"
-            desc="Platinum v1 A7xx Android/Bionic — v39 base, D32S8 workaround revert, has_early_preamble=False, ThinLTO release build"
+            desc="Platinum v1 A7xx Android/Bionic — v39 base, D32S8 workaround revert, has_early_preamble=False, LTO-disabled release optimisation"
             suffix="Platinum-A7xx"
             ;;
         a7xx-oneui|platinum-a7xx-oneui)
             pretty_name="Platinum v1 A7xx OneUI"
-            desc="Platinum v1 A7xx Android/Bionic — v39 base, OneUI 8g2 UI glitch fix, ThinLTO release build"
+            desc="Platinum v1 A7xx Android/Bionic — v39 base, OneUI 8g2 UI glitch fix, LTO-disabled release optimisation"
             suffix="Platinum-A7xx-OneUI"
             ;;
         a8xx-patchs2)
