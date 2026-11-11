@@ -1,0 +1,125 @@
+name: Build and release Platinum v4
+
+on:
+  push:
+    branches:
+      - platinum-v4
+    paths:
+      - 'build_turnip.sh'
+      - '.github/workflows/platinum-v4.yml'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - '8g2_ui_glitch.patch'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: a7xx
+            artifact: Platinum-v4-A7xx
+          - variant: a7xx-oneui
+            artifact: Platinum-v4-A7xx-OneUI
+    steps:
+      - name: Checkout Platinum v4 source
+        uses: actions/checkout@v4
+        with:
+          ref: platinum-v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build patchelf unzip flex bison git perl python3-pip glslang-tools curl zip patch clang lld llvm
+          pip3 install --break-system-packages meson mako
+
+      - name: Build $${{ matrix.artifact }}
+        env:
+          VARIANT: $${{ matrix.variant }}
+          BUILD_VERSION: 4.0
+          PLATINUM_OPTIMIZED: 1
+          PLATINUM_V4_NO_PLT: 1
+          # Same Mesa revision as v1: isolate -fno-plt only.
+          MESA_COMMIT: e4415d24616afbeee528a050b6d70f036057408c
+        run: |
+          chmod +x build_turnip.sh
+          ./build_turnip.sh
+
+      - name: Verify v4 compile flags and package
+        run: |
+          ZIP="$(find turnip_workdir -maxdepth 1 -type f -name 'Turnip_Platinum-*.zip' -print -quit)"
+          test -n "$ZIP"
+          unzip -t "$ZIP"
+          unzip -p "$ZIP" meta.json | python3 -m json.tool
+          unzip -Z1 "$ZIP" | grep -Fxq 'libvulkan_freedreno.so'
+          unzip -Z1 "$ZIP" | grep -Fxq 'meta.json'
+          echo "Verified $ZIP"
+
+      - name: Upload driver artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: $${{ matrix.artifact }}
+          path: turnip_workdir/Turnip_Platinum-*.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  release:
+    needs: build
+    if: $${{ success() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download both build packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Platinum-v4-*
+          path: release
+          merge-multiple: true
+
+      - name: Check release contents
+        run: |
+          ls -lah release
+          test "$(find release -maxdepth 1 -type f -name '*.zip' | wc -l)" -eq 2
+          for f in release/*.zip; do
+            unzip -t "$f"
+            unzip -p "$f" meta.json | python3 -m json.tool
+          done
+
+      - name: Publish Platinum v4 release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: platinum-v4.0
+          name: Platinum Drivers v4.0
+          body: |
+            ## Platinum v4.0 — v1-based isolated no-PLT candidate
+
+            **Controlled baseline:** same Mesa source commit and Mesa release profile as v1.0:
+            `e4415d24616afbeee528a050b6d70f036057408c`.
+
+            ### Packages
+            - **Platinum-A7xx** — standard A7xx Android/Bionic build.
+            - **Platinum-A7xx-OneUI** — A7xx compatibility package for devices whose system driver enables the Adreno 740 TP UBWC hint.
+
+            ### Changelog
+            - Returns to the v1.0 build profile: Mesa release optimisation level 3, NDEBUG, and LTO disabled.
+            - Adds only `-fno-plt` to C and C++ compile flags as an isolated experiment.
+            - Removes the v2/v3 ThinLTO and aggressive linker changes.
+            - CI verifies that `-fno-plt` is present in the generated commands and that no `-flto` flag is present.
+            - No GPU registers, clocks, voltage, memory policy, fan settings or thermal limits are changed.
+
+            ### Testing status
+            - Both package builds and ZIP/metadata checks must pass before release.
+            - V4 is a controlled candidate, not a guaranteed faster driver. A repeatable improvement must be measured against v1 on the target Adreno 740 device.
+            - V1 remains the recommended fallback until real-device testing confirms a v4 improvement.
+          files: release/*.zip
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: $${{ secrets.GITHUB_TOKEN }}
