@@ -1,0 +1,63 @@
+name: Publish working v39 driver packages
+
+on:
+  push:
+    branches:
+      - A8xx
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: a7xx
+            artifact: Turnip-A7xx
+          - variant: a7xx-oneui
+            artifact: Turnip-A7xx-OneUI-Glitch
+
+    steps:
+      - name: Checkout v39 source
+        uses: actions/checkout@v4
+        with:
+          ref: v39
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build patchelf unzip flex bison git perl python3-pip glslang-tools curl zip patch clang lld llvm
+          pip3 install --break-system-packages meson mako
+
+      - name: Build ${{ matrix.artifact }}
+        env:
+          VARIANT: ${{ matrix.variant }}
+          BUILD_VERSION: 39
+        run: |
+          chmod +x build_turnip.sh
+          ./build_turnip.sh
+
+      - name: Verify driver ZIP
+        run: |
+          ZIP="$(find turnip_workdir -maxdepth 1 -type f -name 'Turnip_*.zip' -print -quit)"
+          test -n "$ZIP"
+          unzip -t "$ZIP"
+          unzip -p "$ZIP" meta.json | python3 -m json.tool
+
+      - name: Upload ZIP to workflow
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: turnip_workdir/Turnip_*.zip
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Attach ZIP to v39 release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload v39 turnip_workdir/Turnip_*.zip --clobber --repo "$GITHUB_REPOSITORY"
