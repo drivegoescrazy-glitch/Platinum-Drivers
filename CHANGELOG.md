@@ -47,3 +47,27 @@
 - CI must build both variants, verify ThinLTO in generated commands, and validate both package archives and metadata.
 - FPS, 1% lows, frame times, rendering correctness and sustained temperatures still require testing on physical Adreno 740 hardware.
 - The 5–10% FPS / no-extra-heat goal is unverified until those tests are completed.
+
+
+# Platinum Drivers v3.0 — Changelog
+
+## Baseline
+- Retains the v1/v2 v39-derived A7xx device configuration and OneUI compatibility package.
+- Uses the exact same Mesa source commit as v2.0 (`e4415d24616afbeee528a050b6d70f036057408c`) to isolate compiler/linker changes.
+
+## Build and link optimisations
+- Retains Clang `-O3 -fno-plt -flto=thin` from v2.0.
+- Sets LLD's ThinLTO backend optimisation level to `--lto-O3`, rather than the default O2.
+- Compiles into separate function and data sections using `-ffunction-sections -fdata-sections`.
+- Enables linker garbage collection with `--gc-sections` to discard unreferenced sections.
+- Enables LLD safe identical code folding with `--icf=safe`; deliberately avoids `--icf=all`.
+- CI checks every requested flag in Ninja's actual generated build commands.
+
+## Hardware and thermal policy
+- No GPU register, memory/cache size, GMEM/sysmem, clock, voltage, fan, governor or thermal-throttle overrides.
+- These changes target driver code generation and binary size; they do not directly raise GPU clocks or change GPU power limits.
+
+## Validation status
+- Both package variants must compile, show all requested flags in generated commands, and pass ZIP and metadata checks.
+- Real-game FPS, frame-time consistency, Vulkan CTS, visual compatibility and sustained device temperature remain to be measured on physical Adreno 740 hardware.
+- A 5–10% FPS improvement with no additional temperature is a target only and is not claimed as a measured result.
