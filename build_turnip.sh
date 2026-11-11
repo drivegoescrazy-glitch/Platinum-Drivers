@@ -239,16 +239,6 @@ EOF
         log "Verified: V5 balanced GMEM autotuner is present; LTO disabled"
     fi
 
-    if [ "${PLATINUM_V4_NO_PLT:-0}" = "1" ]; then
-        if ! ninja -C "$build_dir" -t commands | grep -F -- "-fno-plt" >/dev/null; then
-            die "Platinum v4 requested -fno-plt but it is absent from Ninja's generated commands"
-        fi
-        if ninja -C "$build_dir" -t commands | grep -F -- "-flto" >/dev/null; then
-            die "Unexpected LTO flag found: v4 must retain the v1 no-LTO profile"
-        fi
-        log "Verified: v4 uses -fno-plt without ThinLTO"
-    fi
-
     [ -f "$output_dir/lib/libvulkan_freedreno.so" ] || die "libvulkan_freedreno.so was not generated"
 }
 
