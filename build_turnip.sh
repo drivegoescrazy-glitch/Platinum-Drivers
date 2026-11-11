@@ -13,7 +13,6 @@ BUILD_VERSION="${BUILD_VERSION:-1.0}"
 VARIANT="${VARIANT:-a7xx}"
 MESA_COMMIT="${MESA_COMMIT:-}"
 
-REVERT_COMMIT="a70d2af590db192f87b3af01f83a68b450edb4c3"
 
 log() { echo -e "${green}$*${nocolor}"; }
 die() { echo -e "${red}$*${nocolor}" >&2; exit 1; }
@@ -49,31 +48,19 @@ prepare_workdir() {
     git -C "$WORKDIR/mesa" checkout -q --detach FETCH_HEAD
 }
 
-revert_d32s8_commit() {
-    log "A7xx: reverting workaround D32S8 EARLY_Z_LATE_Z..."
-    if ! git cat-file -e "${REVERT_COMMIT}^{commit}" 2>/dev/null; then
-        git fetch -q --depth=2 origin "$REVERT_COMMIT"
-    fi
-    git revert --no-commit "$REVERT_COMMIT" || {
-        git revert --abort 2>/dev/null || true
-        git reset --hard HEAD
-        die "Falha ao reverter $REVERT_COMMIT"
-    }
-}
-
 apply_a7xx_base() {
-    revert_d32s8_commit
-
-    log "A7xx: applying has_early_preamble=False..."
-    if ! grep -A20 'a7xx_gen1 = GPUProps(' src/freedreno/common/freedreno_devices.py | grep -q 'has_early_preamble = False'; then
-        sed -i '/a7xx_gen1 = GPUProps(/a \\        has_early_preamble = False,' src/freedreno/common/freedreno_devices.py
-    fi
+    # V5 uses Mesa's current upstream A7xx device descriptors unchanged.
+    # V1's old D32S8 revert and gen1 preamble override are deliberately not
+    # carried forward onto current Mesa main.
+    log "A7xx: validating upstream Adreno 740 descriptor; no local register/quirk overrides..."
+    grep -Fq 'chip_id=0xffff43050a01' src/freedreno/common/freedreno_devices.py ||
+        die "Current Mesa source does not contain the expected Adreno 740 descriptor"
     python3 -m py_compile src/freedreno/common/freedreno_devices.py
 }
 
 apply_oneui_glitch() {
-    log "A7xx OneUI: applying 8g2_ui_glitch.patch..."
-    patch -p1 --forward < "$REPO_ROOT/8g2_ui_glitch.patch"
+    log "A7xx OneUI: applying idempotent Adreno 740 UBWC-hint compatibility fix..."
+    python3 "$REPO_ROOT/patches/8g2_oneui.py"
 }
 
 apply_patchs2_a8xx() {
@@ -243,6 +230,15 @@ EOF
 
     ninja -C "$build_dir" install
 
+    if [ "${PLATINUM_V5_BALANCED:-0}" = "1" ]; then
+        grep -Fq 'gmem_bandwidth = (gmem_bandwidth * 10 + total_draw_call_bandwidth) / 10;' src/freedreno/vulkan/tu_autotune.cc ||
+            die "V5 balanced GMEM autotuner adjustment is missing"
+        if ninja -C "$build_dir" -t commands | grep -F -- "-flto" >/dev/null; then
+            die "V5 must not use ThinLTO or other LTO flags"
+        fi
+        log "Verified: V5 balanced GMEM autotuner is present; LTO disabled"
+    fi
+
     if [ "${PLATINUM_V4_NO_PLT:-0}" = "1" ]; then
         if ! ninja -C "$build_dir" -t commands | grep -F -- "-fno-plt" >/dev/null; then
             die "Platinum v4 requested -fno-plt but it is absent from Ninja's generated commands"
@@ -263,13 +259,13 @@ package_variant() {
     local pretty_name desc suffix
     case "$VARIANT" in
         a7xx|platinum-a7xx)
-            pretty_name="Platinum v4 A7xx"
-            desc="Platinum v4 A7xx Android/Bionic — v1 release profile with isolated -fno-plt code-generation experiment; no ThinLTO"
+            pretty_name="Platinum v5 A7xx"
+            desc="Platinum v5 A7xx Android/Bionic — current upstream Mesa, balanced GMEM autotuner, normal KGSL power management"
             suffix="Platinum-A7xx"
             ;;
         a7xx-oneui|platinum-a7xx-oneui)
-            pretty_name="Platinum v4 A7xx OneUI"
-            desc="Platinum v4 A7xx Android/Bionic — OneUI 8g2 UI glitch fix, v1 release profile plus -fno-plt; no ThinLTO"
+            pretty_name="Platinum v5 A7xx OneUI"
+            desc="Platinum v5 A7xx Android/Bionic — OneUI UBWC hint compatibility, current upstream Mesa, balanced GMEM autotuner"
             suffix="Platinum-A7xx-OneUI"
             ;;
         a8xx-patchs2)
@@ -316,6 +312,23 @@ main() {
     log "Variant: $VARIANT"
 
     configure_variant
+
+    case "$VARIANT" in
+        a7xx|platinum-a7xx|a7xx-oneui|platinum-a7xx-oneui)
+            # Reuse upstream's KGSL fix assertions and per-game large-SSBO
+            # compatibility entries. These entries affect only named games.
+            bash "$REPO_ROOT/patches/common/apply_common.sh" "$PWD"
+            ;;
+    esac
+
+    if [ "${PLATINUM_V5_BALANCED:-0}" = "1" ]; then
+        case "$VARIANT" in
+            a7xx|platinum-a7xx|a7xx-oneui|platinum-a7xx-oneui)
+                python3 "$REPO_ROOT/patches/apply_balance_variant.py"
+                ;;
+        esac
+    fi
+
     apply_android_ndk_fixes
     build_android
     package_variant
