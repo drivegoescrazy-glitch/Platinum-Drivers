@@ -39,9 +39,9 @@ jobs:
           sudo apt-get install -y ninja-build patchelf unzip flex bison git perl python3-pip glslang-tools curl zip patch clang lld llvm
           pip3 install --break-system-packages meson mako
 
-      - name: Build $${{ matrix.artifact }}
+      - name: Build ${{ matrix.artifact }}
         env:
-          VARIANT: $${{ matrix.variant }}
+          VARIANT: ${{ matrix.variant }}
           BUILD_VERSION: 4.0
           PLATINUM_OPTIMIZED: 1
           PLATINUM_V4_NO_PLT: 1
@@ -64,7 +64,7 @@ jobs:
       - name: Upload driver artifact
         uses: actions/upload-artifact@v4
         with:
-          name: $${{ matrix.artifact }}
+          name: ${{ matrix.artifact }}
           path: turnip_workdir/Turnip_Platinum-*.zip
           if-no-files-found: error
           compression-level: 0
@@ -72,7 +72,7 @@ jobs:
 
   release:
     needs: build
-    if: $${{ success() }}
+    if: ${{ success() }}
     runs-on: ubuntu-latest
     steps:
       - name: Download both build packages
@@ -122,4 +122,4 @@ jobs:
           draft: false
           prerelease: true
         env:
-          GITHUB_TOKEN: $${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
